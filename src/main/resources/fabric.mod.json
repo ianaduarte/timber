@@ -1,0 +1,21 @@
+{
+	"schemaVersion": 1,
+	"id": "${id}",
+	"version": "${version}",
+	"name": "${Id}!",
+	"description": "Better tree felling physics.",
+	"authors": [ "ianaduarte" ],
+	"contact": {
+		"homepage": "https://modrinth.com/${id}!",
+		"sources": "https://github.com/ianaduarte/${id}"
+	},
+	"license": "ARR",
+	"icon": "assets/icon.png",
+	"environment": "*",
+	"mixins": ["timber.mixins.json"],
+	"accessWidener": "timber.accesswidener",
+	"depends": {
+		"minecraft": "~1.21.1",
+		"java": ">=21"
+	}
+}

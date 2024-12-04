@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "dev.ianaduarte.timber.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "LogMixin"
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
