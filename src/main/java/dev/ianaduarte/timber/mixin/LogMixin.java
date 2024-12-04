@@ -3,8 +3,6 @@ package dev.ianaduarte.timber.mixin;
 import com.mojang.datafixers.util.Pair;
 import dev.ianaduarte.timber.util.TreeDirection;
 import dev.ianaduarte.timber.util.TreeNode;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;

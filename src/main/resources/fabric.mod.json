@@ -15,7 +15,7 @@
 	"mixins": ["timber.mixins.json"],
 	"accessWidener": "timber.accesswidener",
 	"depends": {
-		"minecraft": "~1.21.1",
+		"minecraft": "~1.21.4",
 		"java": ">=21"
 	}
 }
