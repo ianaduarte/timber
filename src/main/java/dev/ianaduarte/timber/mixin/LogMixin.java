@@ -1,8 +1,10 @@
 package dev.ianaduarte.timber.mixin;
 
 import com.mojang.datafixers.util.Pair;
+import dev.ianaduarte.timber.util.LeafParticleSpawner;
 import dev.ianaduarte.timber.util.TreeDirection;
 import dev.ianaduarte.timber.util.TreeNode;
+import it.unimi.dsi.fastutil.ints.IntIntPair;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
@@ -33,7 +35,6 @@ import java.util.*;
 
 @Mixin(Block.class)
 public class LogMixin {
-	@Unique private static final Logger LOGGER = LoggerFactory.getLogger(LogMixin.class);
 	@Unique private static final int MAX_LOGS = 512;
 	@Unique private static final int MAX_LEAVES = 1024;
 	@Unique private static final TreeDirection[] TOP_LEVEL_DIRECTIONS  = new TreeDirection[]{
@@ -74,23 +75,20 @@ public class LogMixin {
 		return player.getMainHandItem().getEnchantments().getLevel(silkTouchEnchantmentReference) != 0;
 	}
 	
-	@Inject(method = "playerWillDestroy", at = @At("HEAD"))
-	private void logBreak(Level level, BlockPos pos, BlockState state, Player player, CallbackInfoReturnable<BlockState> cir) {
-		if(!state.is(BlockTags.LOGS) || player.isShiftKeyDown() || isSilkTouchMainHand(player)) return;
-		
+	@Unique
+	private static IntIntPair collectPositions(Level level, BlockPos rootPos, BlockState rootState, List<Pair<BlockPos, BlockState>> outPositions, Vector3f outTendency) {
 		var positionsToCheck = new ArrayDeque<TreeNode>();
 		var checkedPositions = new HashSet<BlockPos>();
-		var positionsToBreak = new ArrayList<Pair<BlockPos, BlockState>>();
-		checkedPositions.add(pos);
-		positionsToBreak.add(Pair.of(pos, state));
+		checkedPositions.add(rootPos);
+		outPositions.add(Pair.of(rootPos, rootState));
 		
-		for(TreeDirection direction : TOP_LEVEL_DIRECTIONS) {
-			positionsToCheck.push(new TreeNode(pos.offset(direction.getOffset()), direction.getOpposite()));
+		for(var direction : TOP_LEVEL_DIRECTIONS) {
+			positionsToCheck.push(new TreeNode(rootPos.offset(direction.getOffset()), direction.getOpposite()));
 		}
 		
 		int logCount = 0;
 		int leafCount = 0;
-		Vector3i tendency = new Vector3i(0, 1, 0);
+		Vector3i tendencyAccum = new Vector3i(0, 1, 0);
 		
 		while(!positionsToCheck.isEmpty()) {
 			var cNode = positionsToCheck.pop();
@@ -101,22 +99,22 @@ public class LogMixin {
 			checkedPositions.add(cPos);
 			if(cState.is(BlockTags.LOGS)) {
 				logCount++;
-				tendency.add(cPos.getX() - pos.getX(), cPos.getY() - pos.getY(), cPos.getZ() - pos.getZ());
-				if(logCount > MAX_LOGS) return;
+				tendencyAccum.add(cPos.getX() - rootPos.getX(), cPos.getY() - rootPos.getY(), cPos.getZ() - rootPos.getZ());
+				if(logCount > MAX_LOGS) return IntIntPair.of(0, 0);
 			}
 			else if(cState.is(BlockTags.LEAVES)) {
 				leafCount++;
-				tendency.add(
-					(cPos.getX() - pos.getX()) / 4,
-					(cPos.getY() - pos.getY()) / 4,
-					(cPos.getZ() - pos.getZ()) / 4
+				tendencyAccum.add(
+					(cPos.getX() - rootPos.getX()) / 4,
+					(cPos.getY() - rootPos.getY()) / 4,
+					(cPos.getZ() - rootPos.getZ()) / 4
 				);
-				if(leafCount > MAX_LEAVES) return;
+				if(leafCount > MAX_LEAVES) return IntIntPair.of(0, 0);
 			}
 			else {
 				continue;
 			}
-			positionsToBreak.add(Pair.of(cPos, cState));
+			outPositions.add(Pair.of(cPos, cState));
 			for(TreeDirection direction : TreeDirection.VALUES) {
 				if(direction == cNode.fromDirection()) continue;
 				
@@ -125,10 +123,12 @@ public class LogMixin {
 				positionsToCheck.push(new TreeNode(nPos, direction.getOpposite()));
 			}
 		}
-		Vector3f nTendency = new Vector3f(tendency).normalize();
-		LOGGER.info("tendency: {}", nTendency);
-		if(leafCount < 1 || logCount < 2 || nTendency.y <= 0.25) return;
-		
+		outTendency.set(tendencyAccum).normalize();
+		return IntIntPair.of(logCount, leafCount);
+	}
+	
+	@Unique
+	private static void spawnFallingBlocks(Level level, Player player, BlockPos rootPos, List<Pair<BlockPos, BlockState>> positionsToBreak) {
 		double radY = Mth.DEG_TO_RAD * (player.getYRot() + 90.0F);
 		double x = Math.cos(radY);
 		double z = Math.sin(radY);
@@ -144,31 +144,51 @@ public class LogMixin {
 				cState = cState.setValue(LeavesBlock.DISTANCE, LeavesBlock.DECAY_DISTANCE);
 			}
 			
-			int index = Math.min(Math.abs(pos.getY() - cPos.getY()), 31);
-			double cX = cPos.getX() + 0.5 + x * OFFSET_MAP[index];
-			double cY = cPos.getY() - OFFSET_MAP[index];
-			double cZ = cPos.getZ() + 0.5 + z * OFFSET_MAP[index];
+			var index = Math.min(Math.abs(rootPos.getY() - cPos.getY()), 31);
+			var cX = cPos.getX() + 0.5 + x * OFFSET_MAP[index];
+			var cY = cPos.getY() - OFFSET_MAP[index];
+			var cZ = cPos.getZ() + 0.5 + z * OFFSET_MAP[index];
 			
-			FallingBlockEntity fallingBlock = new FallingBlockEntity(level, cX, cY, cZ, cState);
-			
-			double motion = SPEED_MAP[index] * 1.05;
-			Vec3 movement = new Vec3(x * motion, 0.0, z * motion);
+			var fallingBlock = new FallingBlockEntity(level, cX, cY, cZ, cState);
+			var motion = SPEED_MAP[index] * 1.05;
+			var movement = new Vec3(x * motion, 0.0, z * motion);
 			fallingBlock.setDeltaMovement(movement);
 			fallingBlock.time = 1;
 			fallingBlock.xo = cX;
 			fallingBlock.yo = cY;
 			fallingBlock.zo = cZ;
+			
 			fallingBlock.setStartPos(cPos);
 			if(cState.is(BlockTags.LOGS)) {
 				fallingBlock.dropItem = true;
 				fallingBlock.setHurtsEntities(2.0F, 40);
-			} else {
+			} else if(cState.getBlock() instanceof LeavesBlock leavesBlock){
 				fallingBlock.dropItem = false;
+				//parameters do fucking NOTHING, because like, why would they :)))))
+				((LeafParticleSpawner)leavesBlock).spawnParticles(
+					level, cPos, level.random.nextInt(0, 3),
+					x * 512, -12, z * 512,
+					0.2, 0.3
+				);
 			}
 			
 			level.addFreshEntity(fallingBlock);
 			level.removeBlock(cPos, true);
 		}
+	}
+	
+	@Inject(method = "playerWillDestroy", at = @At("HEAD"))
+	private void logBreak(Level level, BlockPos pos, BlockState state, Player player, CallbackInfoReturnable<BlockState> cir) {
+		if(!state.is(BlockTags.LOGS) || player.isShiftKeyDown() || isSilkTouchMainHand(player)) return;
+		
+		var positionsToBreak = new ArrayList<Pair<BlockPos, BlockState>>();
+		var tendency = new Vector3f();
+		var breakData = collectPositions(level, pos, state, positionsToBreak, tendency);
+		
+		//logCount, leafCount
+		if(breakData.firstInt() < 1 || breakData.secondInt() < 2 || tendency.y <= 0.25) return;
+		
+		spawnFallingBlocks(level, player, pos, positionsToBreak);
 		level.playSound(null, pos, SoundEvents.ZOMBIE_BREAK_WOODEN_DOOR, SoundSource.BLOCKS);
 	}
 }

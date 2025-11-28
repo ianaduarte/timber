@@ -3,8 +3,12 @@
 	"package": "dev.ianaduarte.timber.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-		"LogMixin"
+		"LogMixin",
+		"leaves.LeavesBlockMixin",
+		"leaves.TintedLeavesMixin",
+		"leaves.UntintedLeavesMixin"
 	],
 	"client": [],
-	"injectors": {"defaultRequire": 1}
+	"injectors": {
+		"defaultRequire": 1}
 }
